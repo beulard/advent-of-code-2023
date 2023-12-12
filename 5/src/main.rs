@@ -307,7 +307,7 @@ fn get_map_layers(input: &String) -> Vec<RangeMap> {
     layers.into_iter().filter(|q| !q.is_empty()).collect()
 }
 
-fn part2_optim(input: &String) {    
+fn part2_optim(input: &String) {
     println!("PART 2 OPTIM");
 
     let input_ranges = get_input_ranges(input);
@@ -328,7 +328,7 @@ fn part2_optim(input: &String) {
         let iter = layer.iter().skip(1).collect::<Vec<_>>();
 
         let wins = iter.windows(2);
-        let mut to_insert : Vec<(i64, (i64, i64))> = vec![];
+        let mut to_insert: Vec<(i64, (i64, i64))> = vec![];
         for win in wins {
             if let [cur, next] = win {
                 let (start, (delta, len)) = cur;
@@ -355,7 +355,7 @@ fn part2_optim(input: &String) {
         layer.insert(start + len, (0, i64::MAX - (start + len)));
         // dbg!(&layer);
     }
-    
+
     // Now that we have a vector of maps where all possible values in the i64 range lie
     // in one of the covered ranges, perhaps the algorithm will be simpler ?
     let mut in_ranges: Vec<SeedRange> = input_ranges.clone();
@@ -387,9 +387,9 @@ fn part2_optim(input: &String) {
                         // dbg!(&mapped_ranges);
                         // Jump to the end of the map's range directly
                         cur_seed = range_end;
-                    }else {
+                    } else {
                         // println!("case 3");
-    
+                        assert!(false);
                     }
                 } else {
                     // println!("case 2");
