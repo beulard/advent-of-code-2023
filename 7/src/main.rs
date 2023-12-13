@@ -1,7 +1,8 @@
-use std::{cmp::Ordering, collections::HashMap, error::Error, str::FromStr, string::ParseError};
+use std::{cmp::Ordering, collections::HashMap, str::FromStr};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 enum Card {
+    J = 1,
     Two = 2,
     Three,
     Four,
@@ -11,7 +12,6 @@ enum Card {
     Eight,
     Nine,
     T,
-    J,
     Q,
     K,
     A,
@@ -49,16 +49,19 @@ impl FromStr for Card {
 struct Hand(Vec<Card>);
 
 impl Hand {
-    // Get the count of each card type in this hand
+    /// Get the count of each card type in this hand, adding the joker count to
+    /// the most frequent card.
     fn counts(&self) -> HashMap<Card, usize> {
         let mut counts: HashMap<Card, usize> = HashMap::new();
         use Card::*;
-        let cards = [
-            Two, Three, Four, Five, T, Six, Seven, Eight, Nine, J, Q, K, A,
-        ];
+        let cards = [Two, Three, Four, Five, Six, Seven, Eight, Nine, T, Q, K, A];
+        let jokers = self.0.iter().filter(|x| **x == J).count();
         for c in cards {
             counts.insert(c.clone(), self.0.iter().filter(|x| **x == c).count());
         }
+        // Update the most frequent card to add the joker count.
+        let max = counts.iter().max_by_key(|x| x.1).unwrap();
+        counts.insert(max.0.clone(), max.1 + jokers);
         counts
     }
 
@@ -146,16 +149,15 @@ impl Ord for Game {
                 // println!("Cards have same strength:");
                 // dbg!(&self.cards, &other.cards);
                 // Compare cards in order from each hand
-                let card_ord = self.cards
-                    .0
-                    .iter()
-                    .zip(other.cards.0.iter())
-                    .fold(Ordering::Equal, |mut card_ord, (a, b)| {
+                let card_ord = self.cards.0.iter().zip(other.cards.0.iter()).fold(
+                    Ordering::Equal,
+                    |mut card_ord, (a, b)| {
                         if card_ord == Ordering::Equal {
                             card_ord = a.cmp(b);
                         }
                         card_ord
-                    });
+                    },
+                );
                 // dbg!(&card_ord);
                 card_ord
             }
@@ -189,7 +191,9 @@ fn main() {
 
     games.sort();
 
-    let total_winnings = games.iter().enumerate().fold(0, |winnings, (idx, game)| winnings + ((idx+1) as u32) * game.bid);
+    let total_winnings = games.iter().enumerate().fold(0, |winnings, (idx, game)| {
+        winnings + ((idx + 1) as u32) * game.bid
+    });
     println!("Total winnings: {}", total_winnings);
 }
 
@@ -222,7 +226,7 @@ mod test {
 
     #[test]
     fn test_three_of_a_kind_full_house() {
-        let h = Hand(vec![Card::J, Card::A, Card::A, Card::A, Card::K]);
+        let h = Hand(vec![Card::Nine, Card::A, Card::A, Card::A, Card::K]);
         let counts = h.counts();
         assert!(h.has_triplet(&counts));
         assert!(!h.has_pair(&counts));
@@ -238,14 +242,14 @@ mod test {
 
     #[test]
     fn test_two_pairs() {
-        let h = Hand(vec![Card::J, Card::A, Card::A, Card::K, Card::K]);
+        let h = Hand(vec![Card::Nine, Card::A, Card::A, Card::K, Card::K]);
         let counts = h.counts();
         assert!(h.has_two_pairs(&counts));
         assert!(h.has_pair(&counts));
         assert_eq!(h.get_strength(), Strength::TwoPair);
         assert_ne!(h.get_strength(), Strength::OnePair);
 
-        let h = Hand(vec![Card::J, Card::A, Card::A, Card::Q, Card::K]);
+        let h = Hand(vec![Card::Nine, Card::A, Card::A, Card::Q, Card::K]);
         let counts = h.counts();
         assert!(!h.has_two_pairs(&counts));
         assert!(h.has_pair(&counts));
@@ -255,7 +259,7 @@ mod test {
 
     #[test]
     fn test_highcard() {
-        let h = Hand(vec![Card::J, Card::Q, Card::A, Card::K, Card::T]);
+        let h = Hand(vec![Card::Nine, Card::Q, Card::A, Card::K, Card::T]);
         let counts = h.counts();
         assert!(!h.has_two_pairs(&counts));
         assert!(!h.has_pair(&counts));
@@ -263,5 +267,28 @@ mod test {
         assert!(!h.has_quadruplet(&counts));
         assert!(!h.has_triplet(&counts));
         assert_eq!(h.get_strength(), Strength::HighCard);
+    }
+
+    #[test]
+    fn test_jokers() {
+        // One joker
+        let h = Hand(vec![Card::J, Card::Q, Card::Q, Card::Q, Card::K]);
+        assert_eq!(h.get_strength(), Strength::FourOfAKind);
+
+        let h = Hand(vec![Card::J, Card::Q, Card::T, Card::Q, Card::K]);
+        assert_eq!(h.get_strength(), Strength::ThreeOfAKind);
+
+        let h = Hand(vec![Card::J, Card::Q, Card::T, Card::Q, Card::T]);
+        assert_eq!(h.get_strength(), Strength::FullHouse);
+
+        // Two jokers
+        let h = Hand(vec![Card::J, Card::Q, Card::Q, Card::Q, Card::J]);
+        assert_eq!(h.get_strength(), Strength::FiveOfAKind);
+
+        let h = Hand(vec![Card::J, Card::Q, Card::K, Card::Q, Card::J]);
+        assert_eq!(h.get_strength(), Strength::FourOfAKind);
+
+        let h = Hand(vec![Card::J, Card::Q, Card::K, Card::T, Card::J]);
+        assert_eq!(h.get_strength(), Strength::ThreeOfAKind);
     }
 }
