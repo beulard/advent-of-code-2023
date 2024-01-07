@@ -31,6 +31,23 @@ struct Condition {
     value: u32,
 }
 
+impl Condition {
+    // Determine the complement of a condition, i.e. the condition which has an opposite effect
+    fn get_complement(&self) -> Condition {
+        Condition {
+            operator: match self.operator {
+                Operator::Gt => Operator::Lt,
+                Operator::Lt => Operator::Gt,
+            },
+            value: match self.operator {
+                Operator::Gt => self.value + 1,
+                Operator::Lt => self.value - 1,
+            },
+            operand: self.operand.clone(),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Rule {
     condition: Option<Condition>,
@@ -210,55 +227,103 @@ fn apply_workflow(
     unreachable!();
 }
 
-/*fn get_acceptable_parts_count(
-    workflow_name: &str,
-    remaining: usize,
-    workflows: &HashMap<String, Workflow>,
-) -> usize {
-    let workflow = &workflows[workflow_name];
-    // Combinations that remain after some of them have been accepted/rejected by the current rule
-    let mut remaining = remaining;
-    for rule in &workflow.rules {
-        // Count how many parts are able to pass this rule.
-        // If no condition, all parts pass -> the passable count is that of the target
-        if let None = rule.condition {
-            match &rule.target {
-                // All parts are acceptable -> total of 4000^4 possible combinations
-                Target::Accept => return remaining,
-                Target::Reject => return 0,
-                Target::GoTo(next) => {
-                    return get_acceptable_parts_count(next.as_str(), remaining, workflows)
-                }
-            }
-        } else if let Some(cond) = &rule.condition {
-            // The count of acceptable combinations equals:
-            // The number of combinations that pass the condition * the number of acceptable combinations in the target, PLUS
-            // the number of combinations that fail the condition * the number of acceptable combinations in the target
-            let n_pass = match cond.operator {
-                Operator::Gt => (4000 - cond.value as usize) * 4000_usize.pow(3),
-                Operator::Lt => (cond.value as usize - 1) * 4000_usize.pow(3),
-            };
+// Determine how many combinations of part ratings pass all the conditions in the stack
+fn compute_conditions(condition_stack: &Vec<Condition>) -> usize {
+    // Combine conditions that act on the same feature (x,m,a,s) to form ranges that pass the criteria
+    // In each feature, count how many options will pass all conditions
+    // then multiply everything together
+    use Operand::*;
+    let mut total = 1;
 
-            // Combinations that pass go to the target
-            // Combinations that fail go to the next rule in the workflow
-
-            // All combinations that pass are valid
-            match &rule.target {
-                Target::Accept => return n_pass + (4000_usize.pow(4) - n_pass),
-                Target::Reject => { // all passes continue to next rule
-                }
-                Target::GoTo(next) => {
-                    // all passes continue to next workflow
-                }
-            }
-            if rule.target == Target::Accept {
-                return n_pass;
+    for feature in [X, M, A, S] {
+        let mut ok_ranges: HashSet<RangeInclusive<usize>> = HashSet::new();
+        ok_ranges.insert(1..=4000);
+        for condition in condition_stack.iter().filter(|c| c.operand == feature) {
+            // dbg!(condition);
+            // Always exists since we put in 1..=4000
+            let range = ok_ranges
+                .iter()
+                .find(|range| range.contains(&(condition.value as usize)))
+                .unwrap()
+                .clone();
+            if condition.operator == Operator::Gt {
+                ok_ranges.insert(RangeInclusive::new(
+                    condition.value as usize + 1,
+                    *range.end(),
+                ));
             } else {
+                ok_ranges.insert(RangeInclusive::new(
+                    *range.start(),
+                    condition.value as usize - 1,
+                ));
             }
+            ok_ranges.remove(&range);
+        }
+        for range in &ok_ranges {
+            total *= range.end() - range.start() + 1;
         }
     }
-    unreachable!();
-}*/
+    total
+}
+
+/// Determine how many combinations of part ratings are accepted by the given workflow.
+/// Uses recursion when the workflow sends some parts through a different workflow in a conditional branch.
+fn count_combinations_accepted_by_workflow(
+    condition_stack: &Vec<Condition>,
+    workflow_name: &str,
+    workflows: &HashMap<String, Workflow>,
+) -> usize {
+    // condition_stack is a vector of conditions which apply to the initial input space
+    // to reduce it into the current subspace.
+
+    let workflow = &workflows[workflow_name];
+
+    // Keeps track of new conditions acquired from previous rules
+    let mut stack = condition_stack.clone();
+    // Keeps track of the number of accepted parts from previous loop iterations
+    let mut hold = 0;
+
+    for rule in &workflow.rules {
+        if let Some(cond) = &rule.condition {
+            // Add to the hold the number of combinations accepted by this rule
+            hold += count_accepted_by_target(
+                &rule.target,
+                &[stack.clone(), vec![cond.clone()]].concat(),
+                workflows,
+            );
+
+            // Push the complementary condition on the stack and move to the next rule
+            stack.push(cond.get_complement());
+        } else {
+            // No condition -> all combinations are treated the same -> return the total count in this branch
+            return hold + count_accepted_by_target(&rule.target, &stack, workflows);
+        }
+    }
+
+    unreachable!()
+}
+
+// Determine how many combinations are accepted by this target, depending on the current condition_stack
+fn count_accepted_by_target(
+    target: &Target,
+    condition_stack: &Vec<Condition>,
+    workflows: &HashMap<String, Workflow>,
+) -> usize {
+    match target {
+        // All parts are acceptable -> tally up the possibilities according to the condition_stack
+        Target::Accept => {
+            return compute_conditions(condition_stack);
+        }
+        Target::Reject => {
+            return 0;
+        }
+        Target::GoTo(next) => {
+            // Recursively find the number of parts accepted by the target,
+            // taking into account the current condition_stack.
+            return count_combinations_accepted_by_workflow(condition_stack, next, workflows);
+        }
+    }
+}
 
 fn main() {
     let input = std::fs::read_to_string("input.txt").unwrap();
@@ -276,129 +341,8 @@ fn main() {
 
     // Part 2
 
-    // Determine how many combinations of part ratings pass all the conditions
-    fn get_combinations(condition_stack: &Vec<Condition>) -> usize {
-        // Combine conditions that act on the same feature (x,m,a,s) to form ranges that pass the criteria
-        // In each feature, count how many options will pass all conditions
-        // then multiply everything together
-        use Operand::*;
-        let mut total = 1;
-        for feature in [X, M, A, S] {
-            let mut x_ok_ranges: HashSet<RangeInclusive<usize>> = HashSet::new();
-            x_ok_ranges.insert(1..=4000);
-            for condition in condition_stack {
-                dbg!(condition);
-                if condition.operand == feature {
-                    // Always exists since we put in 1..=4000
-                    let range = x_ok_ranges
-                        .iter()
-                        .find(|range| range.contains(&(condition.value as usize)))
-                        .unwrap()
-                        .clone();
-                    if condition.operator == Operator::Gt {
-                        x_ok_ranges.insert(RangeInclusive::new(
-                            condition.value as usize + 1,
-                            *range.end(),
-                        ));
-                    } else {
-                        x_ok_ranges.insert(RangeInclusive::new(
-                            *range.start(),
-                            condition.value as usize - 1,
-                        ));
-                    }
-                    println!("del");
-                    x_ok_ranges.remove(&range);
-                }
-            }
-            dbg!(total);
-            for range in &x_ok_ranges {
-                println!(" x {}", range.end() - range.start() + 1);
-                total *= range.end() - range.start() + 1;
-            }
-            dbg!(total);
-        }
-        println!("QWEQWE {}", total);
-        total
-    }
-    // Each condition splits the input into a subspace which passes the condition and the complement, which fails it.
-    // Start simple: if we have one workflow and we need to count how many of the input combinations can be accepted
-    fn get_acceptable_parts_count(
-        condition_stack: &Vec<Condition>,
-        workflow_name: &str,
-        workflows: &HashMap<String, Workflow>,
-    ) -> usize {
-        // condition_stack is a vector of conditions which apply to the initial input space
-        // to reduce it into the current subspace.
-
-        let workflow = &workflows[workflow_name];
-
-        // Keeps track of new conditions acquired from previous rules
-        let mut stack = condition_stack.clone();
-        let mut hold = 0;
-
-        for rule in &workflow.rules {
-            // If no condition, all parts in the subspace pass -> the passable count is the number of combinations
-            // which pass all the conditions in the condition_stack.
-            if let None = rule.condition {
-                match &rule.target {
-                    // All parts are acceptable -> tally up the possibilities according to the condition_stack
-                    Target::Accept => return hold + get_combinations(&stack), //remaining,
-                    // All parts are rejected -> 0
-                    Target::Reject => return hold + 0,
-                    Target::GoTo(next) => {println!("UIUIUI"); 
-                    let n_pass = get_acceptable_parts_count(&stack, next, workflows);
-                    return hold + n_pass}, //get_acceptable_parts_count(next.as_str(), remaining, workflows),
-                }
-            } else if let Some(cond) = &rule.condition {
-                // Combinations that pass go to the target
-                // Combinations that fail go to the next rule in the workflow
-
-                let mut complement = cond.clone();
-                complement.operator = match cond.operator {
-                    Operator::Gt => Operator::Lt,
-                    Operator::Lt => Operator::Gt,
-                };
-                // Adjust value
-                complement.value = match cond.operator {
-                    Operator::Gt => cond.value + 1,
-                    Operator::Lt => cond.value - 1,
-                };
-                let mut composite_conditions = condition_stack.clone();
-                composite_conditions.push(cond.clone());
-                let mut complement_conditions = condition_stack.clone();
-                complement_conditions.push(complement.clone());
-
-                // All combinations that pass all conditions are accepted, the rest goes to the next rule
-                match &rule.target {
-                    Target::Accept => {
-                        let n_pass = get_combinations(
-                            &composite_conditions,
-                        );
-                        hold += n_pass;
-                        println!("EEEEEEEE");
-                        stack.push(complement);
-                    }
-                    Target::Reject => {
-                        // All combinations that pass this set of conditions are rejected
-                        // -> Add the complement to the stack and go to the next rule
-                        stack.push(complement);
-                    }
-                    Target::GoTo(next) => {
-                        // all passes continue to next workflow
-                        let n_pass = get_acceptable_parts_count(&composite_conditions, next, workflows);
-                        let n_rej = get_acceptable_parts_count(&complement_conditions, next, workflows);
-                        return n_pass + n_rej;
-                    }
-                }
-                // if rule.target == Target::Accept {
-                //     return n_pass;
-                // } else
-            }
-        }
-
-        unreachable!()
-    }
-    let acceptable = get_acceptable_parts_count(&mut vec![], "in", &workflows);
-
-    println!("Total acceptable rating combinations: {}", acceptable);
+    println!(
+        "Accepted combinations: {}",
+        count_combinations_accepted_by_workflow(&vec![], "in", &workflows)
+    );
 }
