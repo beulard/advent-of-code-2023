@@ -246,6 +246,16 @@ fn main() {
 
     // PART 2
 
+    // Brute force impossible -> be smart
+    // Create dependency graph from rx to the input pulse ?
+    // e.g. - for rx to be low, cn must send a low pulse
+    //      - for cn to send a low pulse, all its inputs must be high
+    //      - for th to be high, 
+
+    // Find periodicity of inputs to rx and then compute lowest number of presses as the
+    // lowest common factor.
+    // Recurse over inputs to cn.
+
     let mut low_pulses_to_rx = 0;
     let mut button_presses = 0;
     while low_pulses_to_rx != 1 {
@@ -257,20 +267,22 @@ fn main() {
         });
         while let Some(pulse) = pulse_queue.pop_front() {
             // let mut targets = vec![];
+            // if pulse.from == "cn" && pulse.signal == PulseType::Low {
+            //     dbg!(pulse);
+            //     panic!();
+            // }
             pulse.targets.iter().for_each(|name| {
                 
                 match pulse.signal {
                     PulseType::High => high_pulse_count += 1,
                     PulseType::Low => low_pulse_count += 1,
                 }
-
-                // if name.as_str() == "rx" {
-                // println!("{} {:?}", name.as_str(), &pulse.signal);
-                // }
+                // println!("{}", name.as_str());
                 match (name.as_str(), &pulse.signal) {
-                    ("rx", PulseType::Low) => {
-                        println!("!");
+                    ("a", PulseType::High) => {
+                        println!("{}", button_presses);
                         low_pulses_to_rx += 1;
+                        panic!();
                     }
                     _ => ()
                 }
@@ -281,7 +293,14 @@ fn main() {
                         pulse_queue.push_back(output);
                     }
                 }
+                if name.as_str() == "cn" && pulse.signal == PulseType::High{
+                    println!("{} {:?}", name.as_str(), &pulse.signal);
+                    dbg!(&pulse.from);
+                    dbg!(&modules["cn"]);
+                    // panic!();
+                }
             });
+            // dbg!(&modules["cn"]);
         }
         // println!();
     }
