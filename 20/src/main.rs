@@ -1,7 +1,5 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Debug,
-};
+use std::collections::hash_map::Entry::{Occupied, Vacant};
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug)]
 enum Module {
@@ -96,7 +94,7 @@ impl Module {
 
 type ModuleConfig = HashMap<String, Module>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum PulseType {
     Low,
     High,
@@ -234,11 +232,57 @@ fn main() {
 
     let mut low_pulses_to_rx = 0;
     let mut button_presses = 0;
-    while low_pulses_to_rx != 1 {
+
+    // For each module, keep track of its state at the end of the button cycle
+    // As soon as possible, determine if the module state follows a pattern over time
+    // When the pattern is fixed and can no longer increase in period, set the period
+    let mut pattern: HashMap<String, Vec<PulseType>> = HashMap::new();
+    let mut memo: HashMap<Vec<PulseType>, Vec<PulseType>> = HashMap::new();
+
+    use PulseType::*;
+
+    while
+    low_pulses_to_rx != 1
+    /*button_presses < 1000 */{
         button_presses += 1;
+        if button_presses % 10000 == 0 {
+            println!("{}", button_presses);
+        }
+        // dbg!(button_presses);
+        let input = get_states(&modules);
+        // dbg!(&input);
+        if let Some(output) = memo.get(&input) {
+            // dbg!(output);
+            for (idx, (name, module)) in modules
+                .iter_mut()
+                .filter(|(n, x)| match x {
+                    Module::FlipFlop {
+                        outputs,
+                        name,
+                        state,
+                    } => true,
+                    _ => false,
+                })
+                .enumerate()
+            {
+                match module {
+                    Module::FlipFlop {
+                        outputs,
+                        name,
+                        state,
+                    } => {
+                        // println!("{}", name);
+                        *state = output[idx].clone();
+                    }
+                    _ => {}
+                }
+            }
+            continue;
+        }
+
         pulse_queue.push_back(Pulse {
             from: "button".into(),
-            signal: PulseType::Low,
+            signal: Low,
             targets: vec!["broadcaster".into()],
         });
         while let Some(pulse) = pulse_queue.pop_front() {
@@ -249,12 +293,12 @@ fn main() {
             // }
             pulse.targets.iter().for_each(|name| {
                 match pulse.signal {
-                    PulseType::High => high_pulse_count += 1,
-                    PulseType::Low => low_pulse_count += 1,
+                    High => high_pulse_count += 1,
+                    Low => low_pulse_count += 1,
                 }
                 // println!("{}", name.as_str());
                 match (name.as_str(), &pulse.signal) {
-                    ("a", PulseType::High) => {
+                    ("a", High) => {
                         println!("{}", button_presses);
                         low_pulses_to_rx += 1;
                         panic!();
@@ -268,17 +312,71 @@ fn main() {
                         pulse_queue.push_back(output);
                     }
                 }
-                if name.as_str() == "cn" && pulse.signal == PulseType::High {
-                    println!("{} {:?}", name.as_str(), &pulse.signal);
-                    dbg!(&pulse.from);
-                    dbg!(&modules["cn"]);
+                if name.as_str() == "cn" && pulse.signal == High {
+                    // println!("{} {:?}", name.as_str(), &pulse.signal);
+                    // dbg!(&pulse.from);
                     // panic!();
                 }
             });
             // dbg!(&modules["cn"]);
         }
+        let output = get_states(&modules);
+
+        memo.insert(input, output);
         // println!();
     }
 
+    for (module, train) in pattern {
+        print!("{}: ", module);
+        for p in train {
+            print!(
+                "{}",
+                match p {
+                    High => "-",
+                    Low => "_",
+                }
+            );
+        }
+        println!();
+    }
+
+    println!("{}", memo.len());
+
     println!("Button presses for rx=1: {}", button_presses);
+}
+
+fn get_states(modules: &HashMap<String, Module>) -> Vec<PulseType> {
+    let mut ret = vec![];
+    for (name, module) in modules {
+        // println!("{}", name);
+        match module {
+            // Module::Conjunction {
+            //     outputs,
+            //     inputs,
+            //     name,
+            //     state,
+            // } => {
+            //     // println!("{}: {:?}", name, state);
+            //     let all_high = state.iter().all(|(_, x)| *x == High);
+            //     let val = match all_high {
+            //         true => Low,
+            //         false => High,
+            //     };
+
+            //     pattern.insert(name.clone(), val.clone());
+            //     ret.push(val.clone());
+            // }
+            Module::FlipFlop {
+                outputs,
+                name,
+                state,
+            } => {
+                // println!("{}: {:?}", name, state);
+                // pattern.insert(name.clone(), state.clone());
+                ret.push(state.clone());
+            }
+            _ => {}
+        }
+    }
+    ret
 }
