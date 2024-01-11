@@ -242,43 +242,44 @@ fn main() {
     use PulseType::*;
 
     while
-    low_pulses_to_rx != 1
-    /*button_presses < 1000 */{
+    // low_pulses_to_rx != 1
+    button_presses < 10000 
+    {
         button_presses += 1;
         if button_presses % 10000 == 0 {
             println!("{}", button_presses);
         }
         // dbg!(button_presses);
-        let input = get_states(&modules);
-        // dbg!(&input);
-        if let Some(output) = memo.get(&input) {
-            // dbg!(output);
-            for (idx, (name, module)) in modules
-                .iter_mut()
-                .filter(|(n, x)| match x {
-                    Module::FlipFlop {
-                        outputs,
-                        name,
-                        state,
-                    } => true,
-                    _ => false,
-                })
-                .enumerate()
-            {
-                match module {
-                    Module::FlipFlop {
-                        outputs,
-                        name,
-                        state,
-                    } => {
-                        // println!("{}", name);
-                        *state = output[idx].clone();
-                    }
-                    _ => {}
-                }
-            }
-            continue;
-        }
+        // let input = get_states(&modules);
+        // // dbg!(&input);
+        // if let Some(output) = memo.get(&input) {
+        //     // dbg!(output);
+        //     for (idx, (name, module)) in modules
+        //         .iter_mut()
+        //         .filter(|(n, x)| match x {
+        //             Module::FlipFlop {
+        //                 outputs,
+        //                 name,
+        //                 state,
+        //             } => true,
+        //             _ => false,
+        //         })
+        //         .enumerate()
+        //     {
+        //         match module {
+        //             Module::FlipFlop {
+        //                 outputs,
+        //                 name,
+        //                 state,
+        //             } => {
+        //                 // println!("{}", name);
+        //                 *state = output[idx].clone();
+        //             }
+        //             _ => {}
+        //         }
+        //     }
+        //     continue;
+        // }
 
         pulse_queue.push_back(Pulse {
             from: "button".into(),
@@ -298,7 +299,7 @@ fn main() {
                 }
                 // println!("{}", name.as_str());
                 match (name.as_str(), &pulse.signal) {
-                    ("a", High) => {
+                    ("rx", Low) => {
                         println!("{}", button_presses);
                         low_pulses_to_rx += 1;
                         panic!();
@@ -321,8 +322,16 @@ fn main() {
             // dbg!(&modules["cn"]);
         }
         let output = get_states(&modules);
+        for (n, m) in &modules {
+            match m {
+                Module::FlipFlop { outputs, name, state } => {
+                    pattern.entry(n.clone()).or_insert(vec![]).push(state.clone());
 
-        memo.insert(input, output);
+                }, _ => {}
+            }
+        }
+
+        // memo.insert(input, output);
         // println!();
     }
 
@@ -340,10 +349,19 @@ fn main() {
         println!();
     }
 
+    // Try to find a pattern in the flip flop signals
+    // Assume we have enough samples that there is no hidden information
+    // -> if we find the largest period, we can extrapolate the state at any iteration number
+    for (name, pulses) in pattern {
+
+    }
+
     println!("{}", memo.len());
 
     println!("Button presses for rx=1: {}", button_presses);
 }
+
+fn find_largest_period
 
 fn get_states(modules: &HashMap<String, Module>) -> Vec<PulseType> {
     let mut ret = vec![];
