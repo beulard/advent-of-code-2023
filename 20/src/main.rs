@@ -241,10 +241,11 @@ fn main() {
 
     use PulseType::*;
 
+    let mut cn_state = HashMap::new();
+
     while
     // low_pulses_to_rx != 1
-    button_presses < 10000 
-    {
+    button_presses < 1000_000 {
         button_presses += 1;
         if button_presses % 10000 == 0 {
             println!("{}", button_presses);
@@ -313,10 +314,13 @@ fn main() {
                         pulse_queue.push_back(output);
                     }
                 }
-                if name.as_str() == "cn" && pulse.signal == High {
-                    // println!("{} {:?}", name.as_str(), &pulse.signal);
-                    // dbg!(&pulse.from);
-                    // panic!();
+                if name == "cn" {
+                    cn_state.entry(button_presses).or_insert(String::new()).push(
+                        match pulse.signal {
+                            High => '^',
+                            Low => '_',
+                        }
+                    )
                 }
             });
             // dbg!(&modules["cn"]);
@@ -324,44 +328,92 @@ fn main() {
         let output = get_states(&modules);
         for (n, m) in &modules {
             match m {
-                Module::FlipFlop { outputs, name, state } => {
-                    pattern.entry(n.clone()).or_insert(vec![]).push(state.clone());
-
-                }, _ => {}
+                Module::FlipFlop {
+                    outputs,
+                    name,
+                    state,
+                } => {
+                    pattern
+                        .entry(n.clone())
+                        .or_insert(vec![])
+                        .push(state.clone());
+                }
+                _ => {}
             }
         }
 
         // memo.insert(input, output);
         // println!();
     }
-
-    for (module, train) in pattern {
-        print!("{}: ", module);
-        for p in train {
-            print!(
-                "{}",
-                match p {
-                    High => "-",
-                    Low => "_",
-                }
-            );
+    for s in cn_state {
+        if s.1.contains('^') {
+        println!("{:?}", s);
         }
-        println!();
     }
+    println!();
+
+    // for (module, train) in &pattern {
+    //     if module == "kl" {
+    //         print!("{}: ", module);
+    //         for p in train {
+    //             print!(
+    //                 "{}",
+    //                 match p {
+    //                     High => "-",
+    //                     Low => "_",
+    //                 }
+    //             );
+    //         }
+    //         println!();
+    //     }
+    // }
 
     // Try to find a pattern in the flip flop signals
     // Assume we have enough samples that there is no hidden information
-    // -> if we find the largest period, we can extrapolate the state at any iteration number
-    for (name, pulses) in pattern {
-
+    // -> if we find the smallest period, we can extrapolate the state at any iteration number
+    let mut periods = vec![];
+    for (name, pulses) in &pattern {
+        let period = find_smallest_period(pulses);
+        println!("{}: {}", name, period);
+        // The state of this flip flop at iteration N is the same as the state at iteration N % period:
+        assert!(7000 > period);
+        assert_eq!(pulses[7000], pulses[7000 % period]);
+        periods.push(period);
     }
 
-    println!("{}", memo.len());
+    // Now find the required state for rx to receive one low pulse
+    // For rx to receive one low pulse, one of its inputs must send exactly one low pulse
+    // Since its output is a conjunction, the conjunction must have all high inputs ONCE in the run
+
+    // modules.iter().filter(|x| match x.1 {
+
+    // });
 
     println!("Button presses for rx=1: {}", button_presses);
 }
 
-fn find_largest_period
+fn find_smallest_period(pulses: &Vec<PulseType>) -> usize {
+    let mut smallest = 0;
+
+    // Max period we can find is pulses.len() / 2
+    // Min period is 2
+    'cand: for candidate in 2..pulses.len() / 2 {
+        let pattern = &pulses[..candidate];
+        for chunk in pulses.chunks(candidate) {
+            if pattern != chunk && pattern.len() == chunk.len() {
+                // invalid period -> go to next candidate
+                // dbg!(pattern, chunk);
+                continue 'cand;
+            }
+        }
+        // valid period
+        smallest = candidate;
+        // dbg!(pattern);
+        return smallest;
+    }
+
+    smallest
+}
 
 fn get_states(modules: &HashMap<String, Module>) -> Vec<PulseType> {
     let mut ret = vec![];
