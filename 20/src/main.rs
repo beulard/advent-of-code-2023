@@ -199,6 +199,9 @@ fn main() {
         while let Some(pulse) = pulse_queue.pop_front() {
             // let mut targets = vec![];
             pulse.targets.iter().for_each(|name| {
+                if name == "output" {
+                    println!("output: {:?}", pulse);
+                }
                 match pulse.signal {
                     PulseType::High => high_pulse_count += 1,
                     PulseType::Low => low_pulse_count += 1,
@@ -212,6 +215,7 @@ fn main() {
                 }
             });
         }
+        // dbg!(&modules["con"]);
         // println!();
     }
 
@@ -229,6 +233,10 @@ fn main() {
     // Find periodicity of inputs to rx and then compute lowest number of presses as the
     // lowest common factor.
     // Recurse over inputs to cn.
+    let input = std::fs::read_to_string("input.txt").unwrap();
+    let mut modules = parse_input(&input);
+    // dbg!(&modules);
+    let mut pulse_queue: VecDeque<Pulse> = VecDeque::new();
 
     let mut low_pulses_to_rx = 0;
     let mut button_presses = 0;
@@ -237,15 +245,15 @@ fn main() {
     // As soon as possible, determine if the module state follows a pattern over time
     // When the pattern is fixed and can no longer increase in period, set the period
     let mut pattern: HashMap<String, Vec<PulseType>> = HashMap::new();
-    let mut memo: HashMap<Vec<PulseType>, Vec<PulseType>> = HashMap::new();
 
     use PulseType::*;
 
     let mut cn_state = HashMap::new();
 
     while
-    // low_pulses_to_rx != 1
-    button_presses < 1000_000 {
+    true {
+    // low_pulses_to_rx != 1 {
+    // button_presses < 1000 {
         button_presses += 1;
         if button_presses % 10000 == 0 {
             println!("{}", button_presses);
@@ -310,47 +318,90 @@ fn main() {
 
                 // println!("{} -{:?}-> {}", pulse.from, pulse.signal, name);
                 if let Some(target) = modules.get_mut(name) {
+
                     if let Some(output) = target.execute(&pulse.signal, &pulse.from) {
                         pulse_queue.push_back(output);
                     }
-                }
-                if name == "cn" {
-                    cn_state.entry(button_presses).or_insert(String::new()).push(
-                        match pulse.signal {
-                            High => '^',
-                            Low => '_',
+                    // Debug
+                    if name == "cn" {
+                        cn_state
+                            .entry(button_presses)
+                            .or_insert(String::new())
+                            .push(match pulse.signal {
+                                High => '^',
+                                Low => '_',
+                            });
+                        if cn_state[&button_presses]
+                            .chars()
+                            .filter(|x| *x == '^')
+                            .count()
+                            > 1
+                        {
+                            println!("QWE");
                         }
-                    )
+                        if cn_state[&button_presses]
+                            .chars()
+                            .filter(|x| *x == '^')
+                            .count()
+                            > 2
+                        {
+                            println!("AAAAAAAAAA");
+                        }
+                        match pulse.signal {
+                            High => match target {
+                                Module::Conjunction {
+                                    outputs,
+                                    inputs,
+                                    name,
+                                    state,
+                                } => { 
+                                    // dbg!(&state); println!("{}", state.iter().filter(|x| *x.1 == High).count()); 
+                                },
+                                _ => {}
+                            },
+                            _ => {}
+                        }
+                    }
+                    // Debug END
+
                 }
             });
             // dbg!(&modules["cn"]);
         }
-        let output = get_states(&modules);
-        for (n, m) in &modules {
-            match m {
-                Module::FlipFlop {
-                    outputs,
-                    name,
-                    state,
-                } => {
-                    pattern
-                        .entry(n.clone())
-                        .or_insert(vec![])
-                        .push(state.clone());
-                }
-                _ => {}
-            }
-        }
+        // let output = get_states(&modules);
+        // for (n, m) in &modules {
+        //     match m {
+        //         Module::FlipFlop {
+        //             outputs,
+        //             name,
+        //             state,
+        //         } => {
+        //             pattern
+        //                 .entry(n.clone())
+        //                 .or_insert(vec![])
+        //                 .push(state.clone());
+        //         }
+        //         _ => {}
+        //     }
+        // }
 
         // memo.insert(input, output);
         // println!();
     }
     for s in cn_state {
         if s.1.contains('^') {
-        println!("{:?}", s);
+            println!("{:?}", s);
         }
     }
     println!();
+
+    // For rx to receive one low pulse
+    // + All inputs to cn must be high
+    // + For input 1 of cn to be high
+    //  + If input is flip-flop
+
+    // but the order matters...
+    // so how can we find an occurrence if it is impossible to start from the result and trace back the inputs ?
 
     // for (module, train) in &pattern {
     //     if module == "kl" {
@@ -371,15 +422,15 @@ fn main() {
     // Try to find a pattern in the flip flop signals
     // Assume we have enough samples that there is no hidden information
     // -> if we find the smallest period, we can extrapolate the state at any iteration number
-    let mut periods = vec![];
-    for (name, pulses) in &pattern {
-        let period = find_smallest_period(pulses);
-        println!("{}: {}", name, period);
-        // The state of this flip flop at iteration N is the same as the state at iteration N % period:
-        assert!(7000 > period);
-        assert_eq!(pulses[7000], pulses[7000 % period]);
-        periods.push(period);
-    }
+    // let mut periods = vec![];
+    // for (name, pulses) in &pattern {
+    //     let period = find_smallest_period(pulses);
+    //     println!("{}: {}", name, period);
+    //     // The state of this flip flop at iteration N is the same as the state at iteration N % period:
+    //     assert!(7000 > period);
+    //     assert_eq!(pulses[7000], pulses[7000 % period]);
+    //     periods.push(period);
+    // }
 
     // Now find the required state for rx to receive one low pulse
     // For rx to receive one low pulse, one of its inputs must send exactly one low pulse
