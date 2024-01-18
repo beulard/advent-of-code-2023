@@ -1,5 +1,9 @@
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::{HashMap, VecDeque};
+use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
 #[derive(Debug)]
 enum Module {
@@ -10,8 +14,8 @@ enum Module {
         outputs: Vec<String>,
         inputs: Vec<String>,
         name: String,
-        /// Map from source module name to pulse type
-        state: HashMap<String, PulseType>,
+        // Map from source module name to pulse type
+        // state: HashMap<String, PulseType>,
     },
     FlipFlop {
         outputs: Vec<String>,
@@ -21,7 +25,39 @@ enum Module {
 }
 
 impl Module {
-    fn execute(&mut self, input: &PulseType, from: &str) -> Option<Pulse> {
+    fn get_state(&self, modules: &HashMap<String, Module>) -> PulseType {
+        match self {
+            Self::Broadcaster { outputs } => PulseType::Low,
+            Self::Conjunction {
+                outputs,
+                inputs,
+                name,
+            } => {
+                let mut all_high = true;
+                for name in inputs {
+                    if modules[name].get_state(modules) != PulseType::High {
+                        all_high = false;
+                    }
+                }
+                match all_high {
+                    true => PulseType::Low,
+                    false => PulseType::High,
+                }
+            }
+            Self::FlipFlop {
+                outputs,
+                name,
+                state,
+            } => state.clone(),
+        }
+    }
+
+    /*fn execute(
+        &mut self,
+        input: &PulseType,
+        from: &str,
+        modules: &HashMap<String, Module>,
+    ) -> Option<Pulse> {
         match self {
             Self::Broadcaster { outputs } => {
                 let pulse = Pulse {
@@ -36,28 +72,13 @@ impl Module {
                 outputs,
                 inputs,
                 name,
-                state,
             } => {
-                state.insert(from.into(), input.clone());
-                let mut all_high = true;
-                for name in inputs {
-                    if *state.get(name).unwrap_or(&PulseType::Low) != PulseType::High {
-                        all_high = false;
-                    }
-                }
-                if all_high {
-                    return Some(Pulse {
-                        signal: PulseType::Low,
-                        targets: outputs.clone(),
-                        from: name.clone(),
-                    });
-                } else {
-                    return Some(Pulse {
-                        signal: PulseType::High,
-                        targets: outputs.clone(),
-                        from: name.clone(),
-                    });
-                }
+                let current = self.get_state(modules);
+                return Some(Pulse {
+                    signal: current,
+                    targets: outputs.clone(),
+                    from: name.clone(),
+                });
             }
 
             Self::FlipFlop {
@@ -89,10 +110,109 @@ impl Module {
                 }
             }
         }
-    }
+    }*/
 }
 
-type ModuleConfig = HashMap<String, Module>;
+struct ModuleConfig(HashMap<String, RefCell<Module>>);
+
+impl ModuleConfig {
+    fn get_state(&self, name: &str) -> PulseType {
+        if let Some(module) = self.0.get(name) {
+            let m = module.borrow();
+            match &*m {
+                Module::Conjunction {
+                    outputs,
+                    inputs,
+                    name,
+                } => {
+                    let mut all_high = true;
+                    for name in inputs {
+                        if self.get_state(name) != PulseType::High {
+                            all_high = false;
+                        }
+                    }
+                    match all_high {
+                        true => PulseType::Low,
+                        false => PulseType::High,
+                    }
+                }
+                Module::Broadcaster { outputs } => PulseType::Low,
+                Module::FlipFlop {
+                    outputs,
+                    name,
+                    state,
+                } => state.clone(),
+            }
+        } else {
+            panic!();
+        }
+    }
+
+    fn execute(&mut self, pulse: Pulse, pulse_queue: &mut VecDeque<Pulse>) {
+        pulse.targets.iter().for_each(|name| {
+            // println!("{} -{:?}-> {}", pulse.from, pulse.signal, name);
+            if let Some(target) = self.0.get(name).clone() {
+                // if let Some(output) = target.execute(&pulse.signal, &pulse.from) {
+                //     pulse_queue.push_back(output);
+                // }
+                let current = self.get_state(&name);
+
+                match (target.borrow_mut().deref_mut()) {
+                    Module::Broadcaster { outputs } => {
+                        let pulse = Pulse {
+                            signal: pulse.signal.clone(),
+                            targets: outputs.clone(),
+                            from: "broadcaster".into(),
+                        };
+                        pulse_queue.push_back(pulse);
+                    }
+
+                    Module::Conjunction {
+                        outputs,
+                        inputs,
+                        name,
+                    } => {
+                        // let current = self.0[name].borrow();
+                        pulse_queue.push_back(Pulse {
+                            signal: current,
+                            targets: outputs.clone(),
+                            from: name.clone(),
+                        });
+                    }
+
+                    Module::FlipFlop {
+                        outputs,
+                        name,
+                        state,
+                    } => {
+                        use PulseType::*;
+                        match pulse.signal {
+                            High => {}
+                            Low => match state {
+                                Low => {
+                                    *state = High;
+                                    pulse_queue.push_back(Pulse {
+                                        signal: High,
+                                        from: name.clone(),
+                                        targets: outputs.clone(),
+                                    });
+                                }
+                                High => {
+                                    *state = Low;
+                                    pulse_queue.push_back(Pulse {
+                                        signal: Low,
+                                        from: name.clone(),
+                                        targets: outputs.clone(),
+                                    });
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum PulseType {
@@ -140,7 +260,7 @@ fn find_inputs(name: &str, input: &str) -> Vec<String> {
 }
 
 fn parse_input(input: &str) -> ModuleConfig {
-    let mut modules: ModuleConfig = HashMap::new();
+    let mut modules: ModuleConfig = ModuleConfig(HashMap::new());
 
     // Each line is a module
     for line in input.lines() {
@@ -148,28 +268,30 @@ fn parse_input(input: &str) -> ModuleConfig {
         let outputs = get_outputs(line);
         if name.starts_with("broadcaster") {
             // broadcaster
-            modules.insert("broadcaster".into(), Module::Broadcaster { outputs });
+            modules.0.insert(
+                "broadcaster".into(),
+                RefCell::new(Module::Broadcaster { outputs }),
+            );
         } else if name.starts_with("%") {
             // flip flop
-            modules.insert(
+            modules.0.insert(
                 name[1..].into(),
-                Module::FlipFlop {
+                RefCell::new(Module::FlipFlop {
                     outputs,
                     name: name[1..].into(),
                     state: PulseType::Low,
-                },
+                }),
             );
         } else if name.starts_with("&") {
             // conjunction
             let inputs = find_inputs(&name[1..], input);
-            modules.insert(
+            modules.0.insert(
                 name[1..].into(),
-                Module::Conjunction {
+                RefCell::new(Module::Conjunction {
                     name: name[1..].into(),
                     inputs,
                     outputs,
-                    state: HashMap::new(),
-                },
+                }),
             );
         }
     }
@@ -180,7 +302,6 @@ fn parse_input(input: &str) -> ModuleConfig {
 fn main() {
     let input = std::fs::read_to_string("input.txt").unwrap();
     let mut modules = parse_input(&input);
-    dbg!(&modules);
 
     // We have to consider pulses in the order that they are sent
     // Use a FIFO VecDeque -> push_back to add a pulse, pop_front to get the next pulse
@@ -198,6 +319,10 @@ fn main() {
         });
         while let Some(pulse) = pulse_queue.pop_front() {
             // let mut targets = vec![];
+            // if pulse.from == "cn" && pulse.signal == PulseType::Low {
+            //     dbg!(pulse);
+            //     panic!();
+            // }
             pulse.targets.iter().for_each(|name| {
                 if name == "output" {
                     println!("output: {:?}", pulse);
@@ -206,14 +331,9 @@ fn main() {
                     PulseType::High => high_pulse_count += 1,
                     PulseType::Low => low_pulse_count += 1,
                 }
-
-                // println!("{} -{:?}-> {}", pulse.from, pulse.signal, name);
-                if let Some(target) = modules.get_mut(name) {
-                    if let Some(output) = target.execute(&pulse.signal, &pulse.from) {
-                        pulse_queue.push_back(output);
-                    }
-                }
             });
+            modules.execute(pulse, &mut pulse_queue);
+            // let mut targets = vec![];
         }
         // dbg!(&modules["con"]);
         // println!();
@@ -248,12 +368,11 @@ fn main() {
 
     use PulseType::*;
 
-    let mut cn_state = HashMap::new();
+    // let mut cn_state = HashMap::new();
 
-    while
-    true {
-    // low_pulses_to_rx != 1 {
-    // button_presses < 1000 {
+    while true {
+        // low_pulses_to_rx != 1 {
+        // button_presses < 1000 {
         button_presses += 1;
         if button_presses % 10000 == 0 {
             println!("{}", button_presses);
@@ -301,72 +420,66 @@ fn main() {
             //     dbg!(pulse);
             //     panic!();
             // }
-            pulse.targets.iter().for_each(|name| {
-                match pulse.signal {
-                    High => high_pulse_count += 1,
-                    Low => low_pulse_count += 1,
-                }
-                // println!("{}", name.as_str());
-                match (name.as_str(), &pulse.signal) {
-                    ("rx", Low) => {
-                        println!("{}", button_presses);
-                        low_pulses_to_rx += 1;
-                        panic!();
-                    }
-                    _ => (),
-                }
+            modules.execute(pulse, &mut pulse_queue);
+            //     pulse.targets.iter().for_each(|name| {
+            //         // println!("{}", name.as_str());
+            //         match (name.as_str(), &pulse.signal) {
+            //             ("rx", Low) => {
+            //                 println!("{}", button_presses);
+            //                 low_pulses_to_rx += 1;
+            //                 panic!();
+            //             }
+            //             _ => (),
+            //         }
 
-                // println!("{} -{:?}-> {}", pulse.from, pulse.signal, name);
-                if let Some(target) = modules.get_mut(name) {
-
-                    if let Some(output) = target.execute(&pulse.signal, &pulse.from) {
-                        pulse_queue.push_back(output);
-                    }
-                    // Debug
-                    if name == "cn" {
-                        cn_state
-                            .entry(button_presses)
-                            .or_insert(String::new())
-                            .push(match pulse.signal {
-                                High => '^',
-                                Low => '_',
-                            });
-                        if cn_state[&button_presses]
-                            .chars()
-                            .filter(|x| *x == '^')
-                            .count()
-                            > 1
-                        {
-                            println!("QWE");
-                        }
-                        if cn_state[&button_presses]
-                            .chars()
-                            .filter(|x| *x == '^')
-                            .count()
-                            > 2
-                        {
-                            println!("AAAAAAAAAA");
-                        }
-                        match pulse.signal {
-                            High => match target {
-                                Module::Conjunction {
-                                    outputs,
-                                    inputs,
-                                    name,
-                                    state,
-                                } => { 
-                                    // dbg!(&state); println!("{}", state.iter().filter(|x| *x.1 == High).count()); 
-                                },
-                                _ => {}
-                            },
-                            _ => {}
-                        }
-                    }
-                    // Debug END
-
-                }
-            });
-            // dbg!(&modules["cn"]);
+            //         // println!("{} -{:?}-> {}", pulse.from, pulse.signal, name);
+            //         if let Some(target) = modules.get_mut(name) {
+            //             if let Some(output) = target.execute(&pulse.signal, &pulse.from, &modules) {
+            //                 pulse_queue.push_back(output);
+            //             }
+            //             // Debug
+            //             if name == "cn" {
+            //                 cn_state
+            //                     .entry(button_presses)
+            //                     .or_insert(String::new())
+            //                     .push(match pulse.signal {
+            //                         High => '^',
+            //                         Low => '_',
+            //                     });
+            //                 if cn_state[&button_presses]
+            //                     .chars()
+            //                     .filter(|x| *x == '^')
+            //                     .count()
+            //                     > 1
+            //                 {
+            //                     println!("QWE");
+            //                 }
+            //                 if cn_state[&button_presses]
+            //                     .chars()
+            //                     .filter(|x| *x == '^')
+            //                     .count()
+            //                     > 2
+            //                 {
+            //                     println!("AAAAAAAAAA");
+            //                 }
+            //                 match pulse.signal {
+            //                     High => match target {
+            //                         Module::Conjunction {
+            //                             outputs,
+            //                             inputs,
+            //                             name,
+            //                         } => {
+            //                             // dbg!(&state); println!("{}", state.iter().filter(|x| *x.1 == High).count());
+            //                         }
+            //                         _ => {}
+            //                     },
+            //                     _ => {}
+            //                 }
+            //             }
+            //             // Debug END
+            //         }
+            //     });
+            //     // dbg!(&modules["cn"]);
         }
         // let output = get_states(&modules);
         // for (n, m) in &modules {
@@ -388,12 +501,12 @@ fn main() {
         // memo.insert(input, output);
         // println!();
     }
-    for s in cn_state {
-        if s.1.contains('^') {
-            println!("{:?}", s);
-        }
-    }
-    println!();
+    // for s in cn_state {
+    //     if s.1.contains('^') {
+    //         println!("{:?}", s);
+    //     }
+    // }
+    // println!();
 
     // For rx to receive one low pulse
     // + All inputs to cn must be high
