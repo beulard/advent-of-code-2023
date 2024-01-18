@@ -1,9 +1,6 @@
-use std::borrow::BorrowMut;
 use std::cell::RefCell;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::{HashMap, VecDeque};
-use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
+use std::ops::{DerefMut};
 
 #[derive(Debug)]
 enum Module {
@@ -22,95 +19,6 @@ enum Module {
         name: String,
         state: PulseType,
     },
-}
-
-impl Module {
-    fn get_state(&self, modules: &HashMap<String, Module>) -> PulseType {
-        match self {
-            Self::Broadcaster { outputs } => PulseType::Low,
-            Self::Conjunction {
-                outputs,
-                inputs,
-                name,
-            } => {
-                let mut all_high = true;
-                for name in inputs {
-                    if modules[name].get_state(modules) != PulseType::High {
-                        all_high = false;
-                    }
-                }
-                match all_high {
-                    true => PulseType::Low,
-                    false => PulseType::High,
-                }
-            }
-            Self::FlipFlop {
-                outputs,
-                name,
-                state,
-            } => state.clone(),
-        }
-    }
-
-    /*fn execute(
-        &mut self,
-        input: &PulseType,
-        from: &str,
-        modules: &HashMap<String, Module>,
-    ) -> Option<Pulse> {
-        match self {
-            Self::Broadcaster { outputs } => {
-                let pulse = Pulse {
-                    signal: input.clone(),
-                    targets: outputs.clone(),
-                    from: "broadcaster".into(),
-                };
-                Some(pulse)
-            }
-
-            Self::Conjunction {
-                outputs,
-                inputs,
-                name,
-            } => {
-                let current = self.get_state(modules);
-                return Some(Pulse {
-                    signal: current,
-                    targets: outputs.clone(),
-                    from: name.clone(),
-                });
-            }
-
-            Self::FlipFlop {
-                outputs,
-                name,
-                state,
-            } => {
-                use PulseType::*;
-                match input {
-                    High => None,
-                    Low => match state {
-                        Low => {
-                            *state = High;
-                            Some(Pulse {
-                                signal: High,
-                                from: name.clone(),
-                                targets: outputs.clone(),
-                            })
-                        }
-                        High => {
-                            *state = Low;
-                            Some(Pulse {
-                                signal: Low,
-                                from: name.clone(),
-                                targets: outputs.clone(),
-                            })
-                        }
-                    },
-                }
-            }
-        }
-    }*/
 }
 
 struct ModuleConfig(HashMap<String, RefCell<Module>>);
@@ -162,7 +70,6 @@ impl ModuleConfig {
                         let pulse = Pulse {
                             signal: pulse.signal.clone(),
                             targets: outputs.clone(),
-                            from: "broadcaster".into(),
                         };
                         pulse_queue.push_back(pulse);
                     }
@@ -176,7 +83,6 @@ impl ModuleConfig {
                         pulse_queue.push_back(Pulse {
                             signal: current,
                             targets: outputs.clone(),
-                            from: name.clone(),
                         });
                     }
 
@@ -193,7 +99,6 @@ impl ModuleConfig {
                                     *state = High;
                                     pulse_queue.push_back(Pulse {
                                         signal: High,
-                                        from: name.clone(),
                                         targets: outputs.clone(),
                                     });
                                 }
@@ -201,7 +106,6 @@ impl ModuleConfig {
                                     *state = Low;
                                     pulse_queue.push_back(Pulse {
                                         signal: Low,
-                                        from: name.clone(),
                                         targets: outputs.clone(),
                                     });
                                 }
@@ -222,7 +126,6 @@ enum PulseType {
 
 #[derive(Debug, Clone)]
 struct Pulse {
-    from: String,
     signal: PulseType,
     targets: Vec<String>,
 }
@@ -313,7 +216,6 @@ fn main() {
 
     for _ in 0..1000 {
         pulse_queue.push_back(Pulse {
-            from: "button".into(),
             signal: PulseType::Low,
             targets: vec!["broadcaster".into()],
         });
@@ -370,167 +272,23 @@ fn main() {
 
     // let mut cn_state = HashMap::new();
 
-    while true {
-        // low_pulses_to_rx != 1 {
+    // Try setting flip flops 
+
+    while 
+        low_pulses_to_rx != 1 {
         // button_presses < 1000 {
         button_presses += 1;
         if button_presses % 10000 == 0 {
             println!("{}", button_presses);
         }
-        // dbg!(button_presses);
-        // let input = get_states(&modules);
-        // // dbg!(&input);
-        // if let Some(output) = memo.get(&input) {
-        //     // dbg!(output);
-        //     for (idx, (name, module)) in modules
-        //         .iter_mut()
-        //         .filter(|(n, x)| match x {
-        //             Module::FlipFlop {
-        //                 outputs,
-        //                 name,
-        //                 state,
-        //             } => true,
-        //             _ => false,
-        //         })
-        //         .enumerate()
-        //     {
-        //         match module {
-        //             Module::FlipFlop {
-        //                 outputs,
-        //                 name,
-        //                 state,
-        //             } => {
-        //                 // println!("{}", name);
-        //                 *state = output[idx].clone();
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        //     continue;
-        // }
-
         pulse_queue.push_back(Pulse {
-            from: "button".into(),
             signal: Low,
             targets: vec!["broadcaster".into()],
         });
         while let Some(pulse) = pulse_queue.pop_front() {
-            // let mut targets = vec![];
-            // if pulse.from == "cn" && pulse.signal == PulseType::Low {
-            //     dbg!(pulse);
-            //     panic!();
-            // }
             modules.execute(pulse, &mut pulse_queue);
-            //     pulse.targets.iter().for_each(|name| {
-            //         // println!("{}", name.as_str());
-            //         match (name.as_str(), &pulse.signal) {
-            //             ("rx", Low) => {
-            //                 println!("{}", button_presses);
-            //                 low_pulses_to_rx += 1;
-            //                 panic!();
-            //             }
-            //             _ => (),
-            //         }
-
-            //         // println!("{} -{:?}-> {}", pulse.from, pulse.signal, name);
-            //         if let Some(target) = modules.get_mut(name) {
-            //             if let Some(output) = target.execute(&pulse.signal, &pulse.from, &modules) {
-            //                 pulse_queue.push_back(output);
-            //             }
-            //             // Debug
-            //             if name == "cn" {
-            //                 cn_state
-            //                     .entry(button_presses)
-            //                     .or_insert(String::new())
-            //                     .push(match pulse.signal {
-            //                         High => '^',
-            //                         Low => '_',
-            //                     });
-            //                 if cn_state[&button_presses]
-            //                     .chars()
-            //                     .filter(|x| *x == '^')
-            //                     .count()
-            //                     > 1
-            //                 {
-            //                     println!("QWE");
-            //                 }
-            //                 if cn_state[&button_presses]
-            //                     .chars()
-            //                     .filter(|x| *x == '^')
-            //                     .count()
-            //                     > 2
-            //                 {
-            //                     println!("AAAAAAAAAA");
-            //                 }
-            //                 match pulse.signal {
-            //                     High => match target {
-            //                         Module::Conjunction {
-            //                             outputs,
-            //                             inputs,
-            //                             name,
-            //                         } => {
-            //                             // dbg!(&state); println!("{}", state.iter().filter(|x| *x.1 == High).count());
-            //                         }
-            //                         _ => {}
-            //                     },
-            //                     _ => {}
-            //                 }
-            //             }
-            //             // Debug END
-            //         }
-            //     });
-            //     // dbg!(&modules["cn"]);
         }
-        // let output = get_states(&modules);
-        // for (n, m) in &modules {
-        //     match m {
-        //         Module::FlipFlop {
-        //             outputs,
-        //             name,
-        //             state,
-        //         } => {
-        //             pattern
-        //                 .entry(n.clone())
-        //                 .or_insert(vec![])
-        //                 .push(state.clone());
-        //         }
-        //         _ => {}
-        //     }
-        // }
-
-        // memo.insert(input, output);
-        // println!();
     }
-    // for s in cn_state {
-    //     if s.1.contains('^') {
-    //         println!("{:?}", s);
-    //     }
-    // }
-    // println!();
-
-    // For rx to receive one low pulse
-    // + All inputs to cn must be high
-    // + For input 1 of cn to be high
-    //  + If input is flip-flop
-
-    // but the order matters...
-    // so how can we find an occurrence if it is impossible to start from the result and trace back the inputs ?
-
-    // for (module, train) in &pattern {
-    //     if module == "kl" {
-    //         print!("{}: ", module);
-    //         for p in train {
-    //             print!(
-    //                 "{}",
-    //                 match p {
-    //                     High => "-",
-    //                     Low => "_",
-    //                 }
-    //             );
-    //         }
-    //         println!();
-    //     }
-    // }
 
     // Try to find a pattern in the flip flop signals
     // Assume we have enough samples that there is no hidden information
@@ -554,63 +312,4 @@ fn main() {
     // });
 
     println!("Button presses for rx=1: {}", button_presses);
-}
-
-fn find_smallest_period(pulses: &Vec<PulseType>) -> usize {
-    let mut smallest = 0;
-
-    // Max period we can find is pulses.len() / 2
-    // Min period is 2
-    'cand: for candidate in 2..pulses.len() / 2 {
-        let pattern = &pulses[..candidate];
-        for chunk in pulses.chunks(candidate) {
-            if pattern != chunk && pattern.len() == chunk.len() {
-                // invalid period -> go to next candidate
-                // dbg!(pattern, chunk);
-                continue 'cand;
-            }
-        }
-        // valid period
-        smallest = candidate;
-        // dbg!(pattern);
-        return smallest;
-    }
-
-    smallest
-}
-
-fn get_states(modules: &HashMap<String, Module>) -> Vec<PulseType> {
-    let mut ret = vec![];
-    for (name, module) in modules {
-        // println!("{}", name);
-        match module {
-            // Module::Conjunction {
-            //     outputs,
-            //     inputs,
-            //     name,
-            //     state,
-            // } => {
-            //     // println!("{}: {:?}", name, state);
-            //     let all_high = state.iter().all(|(_, x)| *x == High);
-            //     let val = match all_high {
-            //         true => Low,
-            //         false => High,
-            //     };
-
-            //     pattern.insert(name.clone(), val.clone());
-            //     ret.push(val.clone());
-            // }
-            Module::FlipFlop {
-                outputs,
-                name,
-                state,
-            } => {
-                // println!("{}: {:?}", name, state);
-                // pattern.insert(name.clone(), state.clone());
-                ret.push(state.clone());
-            }
-            _ => {}
-        }
-    }
-    ret
 }
