@@ -1,6 +1,7 @@
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::ops::{DerefMut};
+use std::ops::{Deref, DerefMut};
 
 #[derive(Debug)]
 enum Module {
@@ -245,71 +246,110 @@ fn main() {
     println!("Solution: {}", high_pulse_count * low_pulse_count);
 
     // PART 2
-
-    // Brute force impossible -> be smart
-    // Create dependency graph from rx to the input pulse ?
-    // e.g. - for rx to be low, cn must send a low pulse
-    //      - for cn to send a low pulse, all its inputs must be high
-    //      - for th to be high,
-
-    // Find periodicity of inputs to rx and then compute lowest number of presses as the
-    // lowest common factor.
-    // Recurse over inputs to cn.
     let input = std::fs::read_to_string("input.txt").unwrap();
     let mut modules = parse_input(&input);
     // dbg!(&modules);
     let mut pulse_queue: VecDeque<Pulse> = VecDeque::new();
 
-    let mut low_pulses_to_rx = 0;
-    let mut button_presses = 0;
+    // List of states for each module
+    let mut sequence: HashMap<String, Vec<PulseType>> = HashMap::new();
 
-    // For each module, keep track of its state at the end of the button cycle
-    // As soon as possible, determine if the module state follows a pattern over time
-    // When the pattern is fixed and can no longer increase in period, set the period
-    let mut pattern: HashMap<String, Vec<PulseType>> = HashMap::new();
-
-    use PulseType::*;
-
-    // let mut cn_state = HashMap::new();
-
-    // Try setting flip flops 
-
-    while 
-        low_pulses_to_rx != 1 {
-        // button_presses < 1000 {
-        button_presses += 1;
-        if button_presses % 10000 == 0 {
-            println!("{}", button_presses);
-        }
+    for _ in 0..13000 {
         pulse_queue.push_back(Pulse {
-            signal: Low,
+            signal: PulseType::Low,
             targets: vec!["broadcaster".into()],
         });
+
         while let Some(pulse) = pulse_queue.pop_front() {
+            // let mut targets = vec![];
+            // if pulse.from == "cn" && pulse.signal == PulseType::Low {
+            //     dbg!(pulse);
+            //     panic!();
+            // }
+            pulse.targets.iter().for_each(|name| {
+                if name == "output" {
+                    println!("output: {:?}", pulse);
+                }
+                match pulse.signal {
+                    PulseType::High => high_pulse_count += 1,
+                    PulseType::Low => low_pulse_count += 1,
+                }
+            });
             modules.execute(pulse, &mut pulse_queue);
+            // let mut targets = vec![];
+        }
+
+        for (name, module) in &modules.0 {
+            let state = modules.get_state(name);
+
+            sequence
+                .entry(name.clone())
+                .or_insert(vec![])
+                .push(state.clone());
         }
     }
 
-    // Try to find a pattern in the flip flop signals
-    // Assume we have enough samples that there is no hidden information
-    // -> if we find the smallest period, we can extrapolate the state at any iteration number
-    // let mut periods = vec![];
-    // for (name, pulses) in &pattern {
-    //     let period = find_smallest_period(pulses);
-    //     println!("{}: {}", name, period);
-    //     // The state of this flip flop at iteration N is the same as the state at iteration N % period:
-    //     assert!(7000 > period);
-    //     assert_eq!(pulses[7000], pulses[7000 % period]);
-    //     periods.push(period);
-    // }
+    // Draw the input pattern over a few iterations
+    for m in ["kl", "ml", "xs", "jn"] {
+        print!("{}", m);
+        for (i, s) in sequence[m].iter().enumerate() {
+            print!(
+                "{}",
+                match s {
+                    PulseType::High => "^",
+                    PulseType::Low => "_",
+                }
+            );
+        }
+        println!();
+    }
 
-    // Now find the required state for rx to receive one low pulse
-    // For rx to receive one low pulse, one of its inputs must send exactly one low pulse
-    // Since its output is a conjunction, the conjunction must have all high inputs ONCE in the run
+    // Take the inputs and determine the step where they keep the same value instead of alternating
+    let mut special_step_idx = vec![];
 
-    // modules.iter().filter(|x| match x.1 {
+    'input: for m in ["kl", "ml", "xs", "jn"] {
+        let mut opp = PulseType::High;
+        // print!("{}", m);
+        for (i, s) in sequence[m].iter().enumerate() {
+            if *s != opp {
+                println!("{}", i + 1);
+                special_step_idx.push(i + 1);
+                continue 'input;
+            }
+            opp = match s {
+                PulseType::High => PulseType::Low,
+                PulseType::Low => PulseType::High,
+            };
+        }
+    }
+        
+        println!("LCM of irregular steps in inputs: {}", lcm(&special_step_idx));
+}
 
-    // });
+// LCM functions from day 8
+fn lcm2(a: usize, b: usize) -> usize {
+    let mut left = a;
+    let mut right = b;
+    loop {
+        if left == right {
+            return left;
+        } else {
+            if left.min(right) == left {
+                left += a;
+            } else {
+                right += b;
+            }
+        }
+    }
+}
 
-    println!("Button presses for rx=1: {}", button_presses);
+fn lcm(numbers: &[usize]) -> usize {
+    if numbers.len() == 1 {
+        return numbers[0];
+    } else if numbers.len() == 2 {
+        lcm2(numbers[0], numbers[1])
+    } else {
+        let lcm01 = lcm(&numbers[0..=1]);
+        lcm(&[&[lcm01], &numbers[2..]].concat())
+    }
 }
