@@ -322,8 +322,13 @@ fn main() {
             };
         }
     }
-        
-        println!("LCM of irregular steps in inputs: {}", lcm(&special_step_idx));
+
+    // Since they are prime, a multiplication is enough
+    println!("Solution: {}", special_step_idx.iter().fold(1, |product, x| product * x));
+    // println!(
+    //     "LCM of irregular steps in inputs: {}",
+    //     lcm(&special_step_idx)
+    // );
 }
 
 // LCM functions from day 8
