@@ -61,7 +61,7 @@ fn part1() {
     dbg!(r.len());
 }
 
-fn get_reachable_tiles_p2(n_steps: usize, current_pos: HashSet<Position>, map: &HashMap<Position, Tile>, width: usize, height: usize) -> HashSet<Position> {
+fn get_reachable_tiles_p2(n_steps: usize, current_pos: HashSet<Position>, map: &HashMap<Position, Tile>, width: usize, height: usize, memo: &mut HashMap<(usize, Position), HashSet<Position>>) -> HashSet<Position> {
     if n_steps == 0 {
         return current_pos;
     }
@@ -70,20 +70,35 @@ fn get_reachable_tiles_p2(n_steps: usize, current_pos: HashSet<Position>, map: &
 
 
     for pos in current_pos {
-        // Try up
+        let rem = ((pos.0).rem_euclid(width as isize), (pos.1).rem_euclid(height as isize));
+        let offset = (pos.0 / (width as isize), pos.1 / (height as isize));
+        println!("({} {}) -> ({} {}) ({} {})", pos.0, pos.1, rem.0, rem.1, offset.0, offset.1);
+
+        if let Some(soln) = memo.get(&(n_steps, rem)) {
+            for x in soln {
+                reachable.insert((x.0 + offset.0 * (width as isize), x.1 + offset.1 * (height as isize)));
+            }
+            continue;
+            panic!();
+        }
+
         for delta in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             let next = ((pos.0 + delta.0).rem_euclid(width as isize), (pos.1 + delta.1).rem_euclid(height as isize));
             // dbg!((pos.0 + delta.0, pos.1 + delta.1));
             // dbg!(next);
             if let Some(tile) = map.get(&next) {
                 if *tile == Tile::Garden {
+                    if reachable.contains(&(pos.0 + delta.0, pos.1 + delta.1)) {
+                        // println!("QWE");
+                    }
                     reachable.insert((pos.0 + delta.0, pos.1 + delta.1));
+                    memo.entry((n_steps, pos)).or_insert(HashSet::new()).insert((next.0, next.1));
                 }
             }
         }
     }
 
-    get_reachable_tiles_p2(n_steps-1, reachable, map, width, height)
+    get_reachable_tiles_p2(n_steps-1, reachable, map, width, height, memo)
 }
 
 fn part2() {
@@ -95,12 +110,12 @@ fn part2() {
     let (start, tiles) = parse_input(&input);
     // dbg!(&start, &tiles);
 
-    let r = get_reachable_tiles_p2(50, HashSet::from([start]), &tiles, width, height);
+    let mut memo = HashMap::new();
+    let r = get_reachable_tiles_p2(50, HashSet::from([start]), &tiles, width, height, &mut memo);
+    // dbg!(&memo);
     // dbg!(&r);
 
     dbg!(r.len());
-
-    dbg!((-19_i32).rem_euclid(10));
 }
 
 fn main() {
